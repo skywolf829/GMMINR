@@ -96,22 +96,34 @@ class GMMINR(nn.Module):
         
         self.opt = opt
         
+        # Generate random centers for the gaussians
         self.gaussian_centers = torch.nn.parameter.Parameter(
             torch.rand(
                 [opt['n_gaussians'], opt['n_dims']],
                 device = opt['device']
             ) * 2 - 1
         )
+
+        # Construct a covariance matrix with Q*S*Q.T where Q is a householder matrix
+        S = torch.eye(opt['n_dims'],device=opt['device']).unsqueeze(0).repeat(opt['n_gaussians'], 1, 1)
+        S *= ((1/(self.opt['n_gaussians'])) if opt['n_gaussians'] > 0 else 1)
+        v = torch.rand([opt['n_gaussians'], opt['n_dims'], 1],device=opt['device'])
+        v /= torch.linalg.norm(v, dim=1, keepdim=True)
+        Q = torch.eye(opt['n_dims'],device=opt['device']).unsqueeze(0).repeat(opt['n_gaussians'], 1, 1) - \
+            2*torch.bmm(v, v.mT)
+        cov = torch.bmm(torch.bmm(Q, S), Q.mT)
+
+        # Convert to a precision matrix (stabilizes training)
         self.gaussian_precision = torch.nn.parameter.Parameter(
-            torch.linalg.inv((torch.eye(opt['n_dims'],device = opt['device']) * \
-                torch.rand([opt['n_dims']],device=opt['device'])).unsqueeze(0).repeat(opt['n_gaussians'], 1, 1) * \
-                    ((1/opt['n_gaussians']) if opt['n_gaussians'] > 0 else 1))
-        )        
+            torch.linalg.inv(cov) 
+        ) 
+
+        # Generate random starting features for each gaussian        
         self.gaussian_features = torch.nn.parameter.Parameter(
             torch.ones(
                 [opt['n_gaussians'], opt['n_features']],
                 device = opt['device']
-            ).normal_(0, 0.1)
+            ).normal_(0, 1)
         )
         self.pe = PositionalEncoding(opt)
         
@@ -169,7 +181,6 @@ class GMMINR(nn.Module):
         result /= result.max()
         return result
         
-    
     def forward(self, x):     
         
         decoder_input = self.pe(x)
@@ -181,20 +192,25 @@ class GMMINR(nn.Module):
                 (torch.linalg.det(torch.linalg.inv(self.gaussian_precision))**(1/2)))
             
             
-            exp_part = (-1/2) * \
+            exp_part = torch.exp((-1/2) * \
                 ((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1).mT\
                     .matmul(self.gaussian_precision.unsqueeze(0)))\
-                        .matmul((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1)) 
-            result = coeff.unsqueeze(0) * torch.exp(exp_part.squeeze())
+                        .matmul((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1))).squeeze()
+            result = coeff.unsqueeze(0) * exp_part
             feature_vectors = torch.matmul(result,
                             self.gaussian_features)
-            feature_vectors /= (self.opt['n_gaussians']**0.5)
-            print(f"exp_part: {exp_part.min():0.02f} {exp_part.max():0.02f}")
-            print(f"after exp: {torch.exp(exp_part.squeeze()).min():0.02f} {torch.exp(exp_part.squeeze()).max():0.02f}")
+            feature_vectors *= ((6/self.opt['n_gaussians'])**0.5)
+
+            print(f"feature: {self.gaussian_features[0]}")
+            print(f"mean: {self.gaussian_features.mean(dim=1)[0]}")
+            print(f"std: {self.gaussian_features.std(dim=1)[0]}")
+
+            #print(f"exp_part: {exp_part.min():0.02f} {exp_part.max():0.02f}")
+            #print(f"after exp: {torch.exp(exp_part.squeeze()).min():0.02f} {torch.exp(exp_part.squeeze()).max():0.02f}")
             decoder_input = torch.cat([feature_vectors, decoder_input], dim=1)
             
         y = self.decoder(decoder_input)   
-        print(f"y terms: {y.min():0.02f} {y.max():0.02f}")
+        #print(f"y terms: {y.min():0.02f} {y.max():0.02f}")
 
         return y
 

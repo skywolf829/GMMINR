@@ -54,6 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_devices',default="same",type=str,
         help='Which devices to put the training data on. "same" as model, or "cpu".')
     
+    os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     args = vars(parser.parse_args())
 
     settings_path = os.path.join(project_folder_path, "Code", "Batch_run_settings", args['settings'])

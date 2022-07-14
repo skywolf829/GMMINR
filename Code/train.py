@@ -35,13 +35,17 @@ def log_to_writer(iteration, losses, writer, opt):
             / (1024**3))
         writer.add_scalar('GPU memory (GB)', GBytes, iteration)
 
-def log_image(model, grid_to_sample, writer, iteration):
+def log_image(model, grid_to_sample, writer, iteration, dataset):
     with torch.no_grad():
         img = sample_grid_for_image(model, grid_to_sample)
         writer.add_image('Reconstruction', img.clamp(0, 1), 
             iteration, dataformats='HWC')
         gaussian_density = model.gaussian_density(grid_to_sample)
-        writer.add_image("Gaussian density", gaussian_density.clamp(0,1),
+        gt_img = dataset.get_2D_slice().permute(1, 2, 0).repeat(1, 1, 3)
+        gt_img[:,:,0] += gaussian_density[:,:,0]
+        gt_img /= gt_img.max()
+        
+        writer.add_image("Gaussian density", gt_img.clamp(0,1),
             iteration, dataformats = 'HWC')
 
 def log_grad_image(model, grid_to_sample, writer, iteration):
@@ -58,11 +62,11 @@ def log_grad_image(model, grid_to_sample, writer, iteration):
                 grad_img[output_index][...,input_index:input_index+1].clamp(0, 1), 
                 iteration, dataformats='HWC')
 
-def logging(writer, iteration, losses, opt, grid_to_sample):
+def logging(writer, iteration, losses, opt, grid_to_sample, dataset):
     if(iteration % 5 == 0):
         log_to_writer(iteration, losses, writer, opt)
         if(opt['log_image']):
-            log_image(model, grid_to_sample, writer, iteration)
+            log_image(model, grid_to_sample, writer, iteration, dataset)
                     
 def train(rank, model, dataset, opt):
     print("Training on device " + str(rank))
@@ -85,26 +89,27 @@ def train(rank, model, dataset, opt):
         os.path.join(save_folder, opt["save_name"]))
 
 
-    optimizer_gmm_centers = optim.Adam([model.gaussian_centers], lr=0.05,
+    optimizer_gmm_centers = optim.Adam([model.gaussian_centers], lr=0.1,
         betas=[opt['beta_1'], opt['beta_2']]) 
-    optimizer_gmm_cov = optim.Adam([model.gaussian_precision], lr=0.005,
+    optimizer_gmm_cov = optim.Adam([model.gaussian_precision], lr=0.1,
         betas=[opt['beta_1'], opt['beta_2']])
     optimizer_network = optim.Adam(model.network_parameters, lr=opt["lr"],
         betas=[opt['beta_1'], opt['beta_2']]) 
-    scheduler_gmm_centers = torch.optim.lr_scheduler.StepLR(optimizer_gmm_centers, 
-        step_size=opt['iterations']//3, gamma=0.1)
-    scheduler_gmm_cov = torch.optim.lr_scheduler.StepLR(optimizer_gmm_cov, 
-        step_size=opt['iterations']//3, gamma=0.1)
-    scheduler_network = torch.optim.lr_scheduler.StepLR(optimizer_network, 
-        step_size=opt['iterations']//3, gamma=0.1)
+
+    #scheduler_gmm_centers = torch.optim.lr_scheduler.StepLR(optimizer_gmm_centers, 
+    #    step_size=opt['iterations']//3, gamma=0.1)
+    #scheduler_gmm_cov = torch.optim.lr_scheduler.StepLR(optimizer_gmm_cov, 
+    #    step_size=opt['iterations']//3, gamma=0.1)
+    #scheduler_network = torch.optim.lr_scheduler.StepLR(optimizer_network, 
+    #    step_size=opt['iterations']//3, gamma=0.1)
 
     if((rank == 0 and opt['train_distributed']) or not opt['train_distributed']):
         if(os.path.exists(os.path.join(project_folder_path, "tensorboard", opt['save_name']))):
             shutil.rmtree(os.path.join(project_folder_path, "tensorboard", opt['save_name']))
         writer = SummaryWriter(os.path.join('tensorboard',opt['save_name']))
         gt_img = dataset.get_2D_slice()
-        gt_img -= dataset.min()
-        gt_img /= (dataset.max() - dataset.min())
+        #gt_img -= dataset.min()
+        #gt_img /= (dataset.max() - dataset.min())
         writer.add_image("Ground Truth", gt_img, 0, dataformats="CHW")
     
     model.train(True)
@@ -128,12 +133,12 @@ def train(rank, model, dataset, opt):
         optimizer_gmm_centers.step()
         optimizer_gmm_cov.step()
         optimizer_network.step()
-        scheduler_gmm_centers.step()
-        scheduler_gmm_cov.step()
-        scheduler_network.step()
+        #scheduler_gmm_centers.step()
+        #scheduler_gmm_cov.step()
+        #scheduler_network.step()
         
         if((rank == 0 and opt['train_distributed']) or not opt['train_distributed']):
-            logging(writer, iteration, losses, opt, dataset.data.shape[2:])
+            logging(writer, iteration, losses, opt, dataset.data.shape[2:], dataset)
     
     if((rank == 0 and opt['train_distributed']) or not opt['train_distributed']):
         writer.close()
@@ -210,7 +215,7 @@ if __name__ == '__main__':
     data_folder = os.path.join(project_folder_path, "Data")
     output_folder = os.path.join(project_folder_path, "Output")
     save_folder = os.path.join(project_folder_path, "SavedModels")
-
+    os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
     torch.manual_seed(11235813)
 
     if(args['load_from'] is None):
