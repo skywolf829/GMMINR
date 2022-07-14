@@ -102,17 +102,16 @@ class GMMINR(nn.Module):
                 device = opt['device']
             ) * 2 - 1
         )
-        self.gaussian_covariance = torch.nn.parameter.Parameter(
-            (torch.eye(opt['n_dims'],device = opt['device']) * \
+        self.gaussian_precision = torch.nn.parameter.Parameter(
+            torch.linalg.inv((torch.eye(opt['n_dims'],device = opt['device']) * \
                 torch.rand([opt['n_dims']],device=opt['device'])).unsqueeze(0).repeat(opt['n_gaussians'], 1, 1) * \
-                    ((1/opt['n_gaussians']) if opt['n_gaussians'] > 0 else 1)
+                    ((1/opt['n_gaussians']) if opt['n_gaussians'] > 0 else 1))
         )        
         self.gaussian_features = torch.nn.parameter.Parameter(
             torch.ones(
                 [opt['n_gaussians'], opt['n_features']],
                 device = opt['device']
-            ).uniform_(-np.sqrt(6 / opt['n_features']) / 30,
-                       np.sqrt(6 / opt['n_features']) / 30)
+            ).normal_(0, 0.1)
         )
         self.pe = PositionalEncoding(opt)
         
@@ -132,6 +131,7 @@ class GMMINR(nn.Module):
                 else:
                     layer = SineLayer(opt['nodes_per_layer'], opt['nodes_per_layer'])
                     self.decoder.append(layer)
+            self.decoder.append(nn.Tanh())
         else:
             layer = nn.Linear(first_layer_input_size, opt['n_outputs'])
             nn.init.kaiming_uniform_(layer.weight)
@@ -157,10 +157,11 @@ class GMMINR(nn.Module):
         x = x.flatten(0,1)                
         x = x.unsqueeze(1).repeat(1,self.opt['n_gaussians'],1)
         
-        coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * (torch.linalg.det(self.gaussian_covariance)**(1/2)))
+        coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * \
+            (torch.linalg.det(torch.linalg.inv(self.gaussian_precision))**(1/2)))
         exp_part = (-1/2) * \
             ((x-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1).mT\
-                .matmul(torch.linalg.inv(self.gaussian_covariance).unsqueeze(0)))\
+                .matmul(self.gaussian_precision.unsqueeze(0)))\
                     .matmul((x-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1)) 
         result = coeff.unsqueeze(0) * torch.exp(exp_part.squeeze())
         
@@ -176,20 +177,25 @@ class GMMINR(nn.Module):
         if(self.opt['n_gaussians'] > 0):
             
             gauss_dist = x.unsqueeze(1).repeat(1,self.opt['n_gaussians'],1)
-            coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * (torch.linalg.det(self.gaussian_covariance)**(1/2)))
+            coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * \
+                (torch.linalg.det(torch.linalg.inv(self.gaussian_precision))**(1/2)))
             
             
             exp_part = (-1/2) * \
                 ((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1).mT\
-                    .matmul(torch.linalg.inv(self.gaussian_covariance).unsqueeze(0)))\
+                    .matmul(self.gaussian_precision.unsqueeze(0)))\
                         .matmul((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1)) 
             result = coeff.unsqueeze(0) * torch.exp(exp_part.squeeze())
             feature_vectors = torch.matmul(result,
                             self.gaussian_features)
+            feature_vectors /= (self.opt['n_gaussians']**0.5)
+            print(f"exp_part: {exp_part.min():0.02f} {exp_part.max():0.02f}")
+            print(f"after exp: {torch.exp(exp_part.squeeze()).min():0.02f} {torch.exp(exp_part.squeeze()).max():0.02f}")
             decoder_input = torch.cat([feature_vectors, decoder_input], dim=1)
             
         y = self.decoder(decoder_input)   
-        
+        print(f"y terms: {y.min():0.02f} {y.max():0.02f}")
+
         return y
 
         

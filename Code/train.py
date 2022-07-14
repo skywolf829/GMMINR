@@ -87,7 +87,7 @@ def train(rank, model, dataset, opt):
 
     optimizer_gmm_centers = optim.Adam([model.gaussian_centers], lr=0.05,
         betas=[opt['beta_1'], opt['beta_2']]) 
-    optimizer_gmm_cov = optim.Adam([model.gaussian_covariance], lr=0.005,
+    optimizer_gmm_cov = optim.Adam([model.gaussian_precision], lr=0.005,
         betas=[opt['beta_1'], opt['beta_2']])
     optimizer_network = optim.Adam(model.network_parameters, lr=opt["lr"],
         betas=[opt['beta_1'], opt['beta_2']]) 
