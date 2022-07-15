@@ -41,7 +41,7 @@ def log_image(model, grid_to_sample, writer, iteration, dataset):
         writer.add_image('Reconstruction', img.clamp(0, 1), 
             iteration, dataformats='HWC')
         gaussian_density = model.gaussian_density(grid_to_sample)
-        gt_img = dataset.get_2D_slice().permute(1, 2, 0).repeat(1, 1, 3)
+        gt_img = dataset.get_2D_slice().permute(1, 2, 0).repeat(1, 1, 3).to(gaussian_density.device)
         gt_img[:,:,0] += gaussian_density[:,:,0]
         gt_img /= gt_img.max()
         
@@ -96,12 +96,12 @@ def train(rank, model, dataset, opt):
     optimizer_network = optim.Adam(model.network_parameters, lr=opt["lr"],
         betas=[opt['beta_1'], opt['beta_2']]) 
 
-    #scheduler_gmm_centers = torch.optim.lr_scheduler.StepLR(optimizer_gmm_centers, 
-    #    step_size=opt['iterations']//3, gamma=0.1)
-    #scheduler_gmm_cov = torch.optim.lr_scheduler.StepLR(optimizer_gmm_cov, 
-    #    step_size=opt['iterations']//3, gamma=0.1)
-    #scheduler_network = torch.optim.lr_scheduler.StepLR(optimizer_network, 
-    #    step_size=opt['iterations']//3, gamma=0.1)
+    scheduler_gmm_centers = torch.optim.lr_scheduler.StepLR(optimizer_gmm_centers, 
+        step_size=opt['iterations']//3, gamma=0.1)
+    scheduler_gmm_cov = torch.optim.lr_scheduler.StepLR(optimizer_gmm_cov, 
+        step_size=opt['iterations']//3, gamma=0.1)
+    scheduler_network = torch.optim.lr_scheduler.StepLR(optimizer_network, 
+        step_size=opt['iterations']//3, gamma=0.1)
 
     if((rank == 0 and opt['train_distributed']) or not opt['train_distributed']):
         if(os.path.exists(os.path.join(project_folder_path, "tensorboard", opt['save_name']))):
@@ -119,7 +119,10 @@ def train(rank, model, dataset, opt):
     for iteration in range(0, opt['iterations']):
         opt['iteration_number'] = iteration
 
-        model.zero_grad()
+        optimizer_gmm_centers.zero_grad()
+        optimizer_gmm_cov.zero_grad()
+        optimizer_network.zero_grad()
+        
         data = dataset.get_random_points(opt['points_per_iteration'])
         for k in data.keys():
             data[k] = data[k].to(opt['device'])
@@ -130,12 +133,13 @@ def train(rank, model, dataset, opt):
         losses['fitting_loss'] = loss
 
         loss.backward()
+        
         optimizer_gmm_centers.step()
         optimizer_gmm_cov.step()
         optimizer_network.step()
-        #scheduler_gmm_centers.step()
-        #scheduler_gmm_cov.step()
-        #scheduler_network.step()
+        scheduler_gmm_centers.step()
+        scheduler_gmm_cov.step()
+        scheduler_network.step()
         
         if((rank == 0 and opt['train_distributed']) or not opt['train_distributed']):
             logging(writer, iteration, losses, opt, dataset.data.shape[2:], dataset)

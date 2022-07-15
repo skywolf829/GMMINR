@@ -132,7 +132,9 @@ class GMMINR(nn.Module):
         if(self.opt['n_gaussians'] > 0):
             first_layer_input_size += opt['n_features']
         if(opt['n_layers'] > 0):
-            layer = LReLULayer(first_layer_input_size, opt['nodes_per_layer'])
+            layer = SineLayer(first_layer_input_size, 
+                              opt['nodes_per_layer'], 
+                              is_first=True)
             self.decoder.append(layer)
             
             for i in range(opt['n_layers']):
@@ -171,11 +173,11 @@ class GMMINR(nn.Module):
         
         coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * \
             (torch.linalg.det(torch.linalg.inv(self.gaussian_precision))**(1/2)))
-        exp_part = (-1/2) * \
+        exp_part =  torch.exp((-1/2) * \
             ((x-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1).mT\
                 .matmul(self.gaussian_precision.unsqueeze(0)))\
-                    .matmul((x-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1)) 
-        result = coeff.unsqueeze(0) * torch.exp(exp_part.squeeze())
+                    .matmul((x-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1))).squeeze()
+        result = coeff.unsqueeze(0) * exp_part
         
         result = result.sum(dim=1, keepdim=True).reshape(x_shape)
         result /= result.max()
@@ -191,19 +193,20 @@ class GMMINR(nn.Module):
             coeff = 1 / (((2* np.pi)**(self.opt['n_dims']/2)) * \
                 (torch.linalg.det(torch.linalg.inv(self.gaussian_precision))**(1/2)))
             
-            
+
             exp_part = torch.exp((-1/2) * \
                 ((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1).mT\
                     .matmul(self.gaussian_precision.unsqueeze(0)))\
                         .matmul((gauss_dist-self.gaussian_centers.unsqueeze(0)).unsqueeze(-1))).squeeze()
             result = coeff.unsqueeze(0) * exp_part
-            feature_vectors = torch.matmul(result,
-                            self.gaussian_features)
+            #print(f"result: {result.min()} {result.max()}")
+            feature_vectors = torch.matmul(result.unsqueeze(1),
+                            self.gaussian_features.unsqueeze(0)).squeeze()
             feature_vectors *= ((6/self.opt['n_gaussians'])**0.5)
 
-            print(f"feature: {self.gaussian_features[0]}")
-            print(f"mean: {self.gaussian_features.mean(dim=1)[0]}")
-            print(f"std: {self.gaussian_features.std(dim=1)[0]}")
+            #print(f"feature: {self.gaussian_features[0]}")
+            #print(f"mean: {self.gaussian_features.mean(dim=1)[0]}")
+            #print(f"std: {self.gaussian_features.std(dim=1)[0]}")
 
             #print(f"exp_part: {exp_part.min():0.02f} {exp_part.max():0.02f}")
             #print(f"after exp: {torch.exp(exp_part.squeeze()).min():0.02f} {torch.exp(exp_part.squeeze()).max():0.02f}")
