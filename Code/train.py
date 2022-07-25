@@ -173,6 +173,8 @@ if __name__ == '__main__':
         help='Nodes per layer in the model')    
     parser.add_argument('--interpolate',default=None,type=str2bool,
         help='Whether or not to use interpolation during training')    
+    parser.add_argument('--vorticity',default=None,type=str2bool,
+        help='Whether or not to use interpolation during training')    
     
     parser.add_argument('--train_distributed',default=None,type=str2bool,
         help='Train on multiple GPUs')

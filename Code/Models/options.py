@@ -18,6 +18,7 @@ class Options():
         opt['n_layers']                             = 4       
         opt['nodes_per_layer']                      = 128
         opt['interpolate']                          = False
+        opt['vorticity']                            = False
 
         opt['train_distributed']                    = False
         opt['device']                               = 'cuda:0'

@@ -6,12 +6,12 @@
         "n_features": 16,
         "n_outputs": 1,
         "n_layers": 4,
-        "nodes_per_layer": 128,
-        "n_gaussians": 20,
+        "nodes_per_layer": 64,
+        "n_gaussians": 0,
         "lr": 0.001,
-        "iterations": 100,
+        "iterations": 1000,
         "points_per_iteration": 10000,
-        "save_name": "cameraman_0gaussians_100",
+        "save_name": "cameraman_10gaussians_no_pe",
         "log_image": true     
     }]
 }

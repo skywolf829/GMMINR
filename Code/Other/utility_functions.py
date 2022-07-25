@@ -513,6 +513,21 @@ def jacobian(data, normalize=True):
         jac /= (data.norm(dim=1) + 1e-8)
     return jac
 
+def curl(data):
+    dwdy = spatial_gradient(data,2,1)
+    dvdz = spatial_gradient(data,1,0)
+    
+    dudz = spatial_gradient(data,0,0)
+    dwdx = spatial_gradient(data,2,2)
+    
+    dvdx = spatial_gradient(data,1,2)
+    dudy = spatial_gradient(data,0,1)
+    
+    x = dwdy - dvdz
+    y = dudz - dwdx
+    z = dvdx - dudy
+    return torch.stack([x,y,z], dim=1)
+
 def spatial_gradient(data, channel, dimension):
     # takes the gradient along dimension in channel
     # expects data to be [b, c, d, h, w]

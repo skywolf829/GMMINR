@@ -128,7 +128,8 @@ class GMMINR(nn.Module):
         self.pe = PositionalEncoding(opt)
         
         self.decoder = nn.ModuleList()
-        first_layer_input_size = opt['num_positional_encoding_terms']*opt['n_dims']*2
+        #first_layer_input_size = opt['num_positional_encoding_terms']*opt['n_dims']*2
+        first_layer_input_size = opt['n_dims']
         if(self.opt['n_gaussians'] > 0):
             first_layer_input_size += opt['n_features']
         if(opt['n_layers'] > 0):
@@ -185,7 +186,8 @@ class GMMINR(nn.Module):
         
     def forward(self, x):     
         
-        decoder_input = self.pe(x)
+        #decoder_input = self.pe(x)
+        decoder_input = x
         
         if(self.opt['n_gaussians'] > 0):
             
